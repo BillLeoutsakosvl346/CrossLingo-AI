@@ -9,6 +9,7 @@ import Colors from '@/constants/Colors';
 import { router } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 function CustomDrawerContent(props: any) {
   const colorScheme = useColorScheme();
@@ -17,8 +18,11 @@ function CustomDrawerContent(props: any) {
   const recentWords = ['tu', 'un', 'y'];
 
   return (
-    <View style={styles.drawerContainer}>
-      <DrawerContentScrollView {...props} contentContainerStyle={styles.scrollContent}>
+    <View style={{ flex: 1 }}>
+      <DrawerContentScrollView 
+        {...props} 
+        contentContainerStyle={styles.scrollContent}
+      >
         {/* Streak Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Streak</Text>
@@ -74,19 +78,21 @@ function CustomDrawerContent(props: any) {
         </View>
       </DrawerContentScrollView>
 
-      {/* Gear Button at Bottom */}
-      <View style={styles.bottomSection}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.gearButton,
-            { opacity: pressed ? 0.5 : 1 }
-          ]}
-          onPress={() => router.push('/settings')}
-        >
-          <FontAwesome name="cog" size={24} color={theme.text} />
-          <Text style={[styles.gearText, { color: theme.text }]}>Settings</Text>
-        </Pressable>
-      </View>
+      {/* Sticky Footer wrapped in SafeAreaView */}
+      <SafeAreaView edges={['bottom']}>
+        <View style={styles.footer}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.gearButton,
+              { opacity: pressed ? 0.5 : 1 }
+            ]}
+            onPress={() => router.push('/(drawer)/settings')}
+          >
+            <FontAwesome name="cog" size={24} color={theme.text} />
+            <Text style={[styles.gearText, { color: theme.text }]}>Settings</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
     </View>
   );
 }
@@ -136,20 +142,46 @@ export default function DrawerLayout() {
           name="practice" 
           options={{ title: 'Practice' }} 
         />
+        <Drawer.Screen 
+          name="settings/index" 
+          options={{ 
+            title: 'Settings',
+            drawerItemStyle: { display: 'none' }
+          }} 
+        />
+        <Drawer.Screen 
+          name="settings/manage-chats" 
+          options={{ 
+            title: 'Manage Chats',
+            drawerItemStyle: { display: 'none' }
+          }} 
+        />
+        <Drawer.Screen 
+          name="settings/customize-teacher" 
+          options={{ 
+            title: 'Customize Teacher',
+            drawerItemStyle: { display: 'none' }
+          }} 
+        />
+        <Drawer.Screen 
+          name="settings/start-over" 
+          options={{ 
+            title: 'Start Over',
+            drawerItemStyle: { display: 'none' }
+          }} 
+        />
       </Drawer>
     </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
-  drawerContainer: {
-    flex: 1,
-  },
   scrollContent: {
     paddingTop: 50,
+    paddingHorizontal: 20,
+    paddingBottom: 16, // Give space so last item isn't hidden behind footer
   },
   section: {
-    paddingHorizontal: 20,
     paddingVertical: 15,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.1)',
@@ -175,17 +207,19 @@ const styles = StyleSheet.create({
   },
   navSection: {
     paddingVertical: 10,
+    marginHorizontal: -20, // Compensate for scroll content padding so nav items touch edges
   },
   recentWord: {
     fontSize: 14,
     paddingVertical: 2,
     paddingLeft: 10,
   },
-  bottomSection: {
+  footer: {
+    paddingTop: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 12, // Fixed padding - SafeAreaView handles dynamic inset
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.1)',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
   },
   gearButton: {
     flexDirection: 'row',
