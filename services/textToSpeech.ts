@@ -1,4 +1,3 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Audio } from 'expo-av';
 import { Buffer } from 'buffer';
 import Constants from 'expo-constants';
@@ -7,21 +6,6 @@ const getGoogleApiKey = () => {
   return Constants.expoConfig?.extra?.googleApiKey || 
          Constants.manifest?.extra?.googleApiKey || 
          process.env.GOOGLE_API_KEY;
-};
-
-// Lazy initialize Google AI client
-let googleAI: GoogleGenerativeAI | null = null;
-
-const getGoogleClient = () => {
-  if (!googleAI) {
-    const apiKey = getGoogleApiKey();
-    
-    if (!apiKey) {
-      throw new Error('Google API key not found for TTS. Please add GOOGLE_API_KEY to your .env file.');
-    }
-    googleAI = new GoogleGenerativeAI(apiKey);
-  }
-  return googleAI;
 };
 
 
@@ -62,41 +46,51 @@ export class TextToSpeechService {
       // Mark as loading
       this.loadingWords.add(cacheKey);
 
-      const googleClient = getGoogleClient();
-      const model = googleClient.getGenerativeModel({ model: 'gemini-2.5-flash-preview-tts' });
-
-      // Generate audio using Google Gemini TTS
-      const result = await model.generateContent({
-        contents: [{ 
-          parts: [{ 
-            text: `Pronounce in Castilian Spanish with clear pronunciation: ${spanishWord}` 
-          }] 
-        }],
-        generationConfig: {
-          responseModalities: ["AUDIO"],
-          speechConfig: {
-            voiceConfig: { 
-              prebuiltVoiceConfig: { 
-                voiceName: "Kore" // Good voice for Spanish pronunciation
-              } 
+      // Direct API call to Google TTS
+      const apiKey = getGoogleApiKey();
+      if (!apiKey) {
+        throw new Error('Google API key not found. Please add GOOGLE_API_KEY to your .env file.');
+      }
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent`, {
+        method: 'POST',
+        headers: {
+          'x-goog-api-key': apiKey!,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{ 
+            parts: [{ 
+              text: `Pronounce in Castilian Spanish: ${spanishWord}` 
+            }] 
+          }],
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+              voiceConfig: { 
+                prebuiltVoiceConfig: { 
+                  voiceName: "Kore"
+                } 
+              }
             }
           }
-        }
+        })
       });
 
-      // Extract base64 PCM data
-      const audioData = result.response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (!response.ok) {
+        throw new Error(`Google TTS API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      
       if (!audioData) {
         throw new Error('No audio data received from Google TTS');
       }
 
-      // Convert PCM to WAV format for React Native playback
+      // Convert PCM to WAV for playback
       const pcmBuffer = Buffer.from(audioData, 'base64');
       const wavBuffer = this.pcmToWav(pcmBuffer, 24000, 1, 16);
-      const base64Wav = wavBuffer.toString('base64');
-      
-      // Create data URI for React Native audio playback  
-      const audioUri = `data:audio/wav;base64,${base64Wav}`;
+      const audioUri = `data:audio/wav;base64,${wavBuffer.toString('base64')}`;
 
       // Cache the result
       this.audioCache.set(cacheKey, audioUri);
@@ -105,11 +99,12 @@ export class TextToSpeechService {
 
     } catch (error: any) {
       this.loadingWords.delete(spanishWord.toLowerCase().trim());
+      console.error('Google TTS detailed error:', error.message);
       
-      const errorMessage = error?.message?.includes('SERVICE_DISABLED')
+      const errorMessage = error?.message?.includes('SERVICE_DISABLED') || error?.message?.includes('403')
         ? 'Google TTS API not enabled. Check Google Cloud Console.'
-        : error?.status === 429
-        ? 'Too many requests. Please wait and try again.'
+        : error?.message?.includes('API key')
+        ? 'Invalid Google API key. Check your .env file.'
         : 'Failed to generate pronunciation. Please try again.';
 
       return { error: errorMessage };
