@@ -1,292 +1,382 @@
-import { StyleSheet, TextInput, ScrollView } from 'react-native';
+import { StyleSheet, TextInput, ScrollView, ActivityIndicator, Pressable } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useState } from 'react';
-import ScreenContainer from '@/components/ui/ScreenContainer';
-import Card from '@/components/ui/Card';
+import { useState, useEffect } from 'react';
 import Button from '@/components/ui/Button';
-
-interface VocabularyItem {
-  word: string;
-  translation: string;
-  learned: boolean;
-}
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { router } from 'expo-router';
+import VocabularyTrackerService, { LearnedWord } from '../../services/vocabularyTracker';
+import TextToSpeechService from '../../services/textToSpeech';
 
 interface VocabCardProps {
-  word: string;
-  translation: string;
-  learned: boolean;
+  word: LearnedWord;
+  onPlayAudio: (word: string) => void;
+  isPlayingAudio: string | null;
 }
-
-// Sample vocabulary data
-const vocabulary: VocabularyItem[] = [
-  { word: 'hola', translation: 'hello', learned: true },
-  { word: 'gracias', translation: 'thank you', learned: true },
-  { word: 'por favor', translation: 'please', learned: false },
-  { word: 'adiós', translation: 'goodbye', learned: true },
-  { word: 'sí', translation: 'yes', learned: false },
-  { word: 'no', translation: 'no', learned: true },
-  { word: 'agua', translation: 'water', learned: false },
-  { word: 'comida', translation: 'food', learned: false },
-];
 
 export default function VocabularyScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
+  const tabBarHeight = useBottomTabBarHeight();
   const [searchText, setSearchText] = useState('');
+  const [vocabulary, setVocabulary] = useState<LearnedWord[]>([]);
+  const [isPlayingAudio, setIsPlayingAudio] = useState<string | null>(null);
+  const [footerHeight, setFooterHeight] = useState(0);
+  
+  const vocabularyTracker = VocabularyTrackerService.getInstance();
+  const ttsService = TextToSpeechService.getInstance();
 
+  // Load vocabulary on component mount and refresh periodically
+  useEffect(() => {
+    const loadVocabulary = () => {
+      const words = vocabularyTracker.getLearnedWords();
+      setVocabulary(words);
+    };
+
+    loadVocabulary();
+    
+    // Refresh vocabulary every 2 seconds to catch new words from chat
+    const interval = setInterval(loadVocabulary, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Filter vocabulary based on search
   const filteredVocab = vocabulary.filter(item =>
     item.word.toLowerCase().includes(searchText.toLowerCase()) ||
     item.translation.toLowerCase().includes(searchText.toLowerCase())
   );
 
-  const learnedCount = vocabulary.filter(v => v.learned).length;
-  const progressPercent = (learnedCount / vocabulary.length) * 100;
+  const progressPercent = vocabulary.length > 0 ? 100 : 0; // All words from chat are "learned"
 
-  const VocabCard = ({ word, translation, learned }: VocabCardProps) => (
-    <View style={[
-      styles.vocabCard,
-      { 
-        backgroundColor: learned ? theme.primary + '10' : theme.surface,
-        borderColor: learned ? theme.primary + '30' : theme.border,
+  const handlePlayAudio = async (spanishWord: string) => {
+    if (isPlayingAudio === spanishWord) return;
+
+    setIsPlayingAudio(spanishWord);
+    
+    try {
+      // Check if audio is cached
+      if (ttsService.isAudioCached(spanishWord)) {
+        await ttsService.playWord(spanishWord);
+      } else {
+        // Generate and play new audio
+        const response = await ttsService.generateSpeech(spanishWord);
+        if (!response.error && response.audioUri) {
+          await ttsService.playWord(spanishWord);
+        }
       }
-    ]}>
-      <View style={styles.wordContainer}>
+    } catch (error) {
+      console.error('Audio playback failed:', error);
+    } finally {
+      setTimeout(() => setIsPlayingAudio(null), 1000); // Reset after 1 second
+    }
+  };
+
+  const VocabCard = ({ word, onPlayAudio, isPlayingAudio }: VocabCardProps) => (
+    <View style={[styles.vocabCard, { 
+      backgroundColor: theme.surface,
+      borderColor: theme.border
+    }]}>
+      <View style={styles.vocabContent}>
         <View style={styles.wordInfo}>
-          <Text style={[styles.foreignWord, { color: theme.text }]}>{word}</Text>
-          <Text style={[styles.translation, { color: theme.neutral }]}>{translation}</Text>
+          <Text style={[styles.foreignWord, { color: '#e53e3e' }]}>{word.word}</Text>
+          <Text style={[styles.translation, { color: theme.neutral }]}>{word.translation}</Text>
         </View>
-        <View style={[
-          styles.statusIcon,
-          { backgroundColor: learned ? theme.primary : theme.surfaceVariant }
-        ]}>
-          <MaterialIcons 
-            name={learned ? "check" : "circle-outline"} 
-            size={18} 
-            color={learned ? theme.background : theme.neutral} 
-          />
-        </View>
+        
+        <Pressable
+          style={[styles.audioButton, { 
+            backgroundColor: theme.primary + '15',
+            borderColor: theme.primary + '25'
+          }]}
+          onPress={() => onPlayAudio(word.word)}
+          disabled={isPlayingAudio === word.word}
+        >
+          {isPlayingAudio === word.word ? (
+            <ActivityIndicator size="small" color={theme.primary} />
+          ) : (
+            <MaterialIcons 
+              name={ttsService.isAudioCached(word.word) ? "volume-up" : "record-voice-over"} 
+              size={18} 
+              color={theme.primary} 
+            />
+          )}
+        </Pressable>
       </View>
     </View>
   );
 
   return (
-    <ScreenContainer scrollable hasTabBar>
-      {/* Modern Header with Stats */}
-      <View style={styles.headerSection}>
-        <View style={styles.titleArea}>
-          <Text style={[styles.title, { color: theme.text }]}>My Vocabulary</Text>
-          <View style={styles.statsRow}>
-            <View style={[styles.statBadge, { backgroundColor: theme.primary + '20' }]}>
-              <MaterialIcons name="check-circle" size={16} color={theme.primary} />
-              <Text style={[styles.statText, { color: theme.primary }]}>{learnedCount} learned</Text>
-            </View>
-            <View style={[styles.statBadge, { backgroundColor: theme.secondary + '20' }]}>
-              <MaterialIcons name="pending" size={16} color={theme.secondary} />
-              <Text style={[styles.statText, { color: theme.secondary }]}>{vocabulary.length - learnedCount} to go</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Enhanced Progress Circle */}
-        <View style={styles.progressContainer}>
-          <View style={[styles.progressCircle, { borderColor: theme.primary + '30' }]}>
-            <View style={[
-              styles.progressCircleInner,
-              { backgroundColor: theme.primary + '20' }
-            ]}>
-              <Text style={[styles.progressPercentage, { color: theme.primary }]}>
-                {Math.round(progressPercent)}%
-              </Text>
-              <Text style={[styles.progressLabel, { color: theme.neutral }]}>complete</Text>
-            </View>
-          </View>
-        </View>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: theme.text }]}>My Vocabulary</Text>
+        <Text style={[styles.subtitle, { color: theme.neutral }]}>
+          {vocabulary.length} words learned from conversations
+        </Text>
       </View>
 
-      {/* Modern Search */}
-      <View style={[styles.searchContainer, { 
-        backgroundColor: theme.surface,
-        borderColor: theme.border
-      }]}>
-        <MaterialIcons name="search" size={22} color={theme.neutral} />
-        <TextInput
-          style={[styles.searchInput, { color: theme.text }]}
-          placeholder="Search words..."
-          placeholderTextColor={theme.neutral}
-          value={searchText}
-          onChangeText={setSearchText}
-        />
-        {searchText.length > 0 && (
-          <MaterialIcons 
-            name="clear" 
-            size={20} 
-            color={theme.neutral} 
-            onPress={() => setSearchText('')}
+      {/* Enhanced Search */}
+      {vocabulary.length > 0 && (
+        <View style={[styles.searchContainer, { 
+          backgroundColor: theme.surface,
+          borderColor: theme.border,
+          shadowColor: theme.text
+        }]}>
+          <View style={[styles.searchIconContainer, { backgroundColor: theme.primary + '10' }]}>
+            <MaterialIcons name="search" size={18} color={theme.primary} />
+          </View>
+          <TextInput
+            style={[styles.searchInput, { color: theme.text }]}
+            placeholder="Search vocabulary..."
+            placeholderTextColor={theme.neutral}
+            value={searchText}
+            onChangeText={setSearchText}
           />
-        )}
-      </View>
+          {searchText.length > 0 && (
+            <Pressable 
+              style={[styles.clearButton, { backgroundColor: theme.neutral + '15' }]}
+              onPress={() => setSearchText('')}
+            >
+              <MaterialIcons name="clear" size={16} color={theme.neutral} />
+            </Pressable>
+          )}
+        </View>
+      )}
 
-      {/* Vocabulary List */}
-      <View style={styles.vocabSection}>
-        {filteredVocab.length > 0 ? (
-          filteredVocab.map((item, index) => (
-            <VocabCard 
-              key={`${item.word}-${index}`}
-              word={item.word}
-              translation={item.translation}
-              learned={item.learned}
-            />
-          ))
-        ) : (
+      {/* Vocabulary Words */}
+      <ScrollView 
+        style={styles.vocabList} 
+        contentContainerStyle={[
+          styles.vocabListContent,
+          { paddingBottom: footerHeight || 16 } // Dynamic padding based on footer height
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        {vocabulary.length === 0 ? (
           <View style={styles.emptyState}>
-            <MaterialIcons name="search-off" size={48} color={theme.neutral} />
+            <MaterialIcons name="chat" size={64} color={theme.neutral} />
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>
+              No vocabulary yet
+            </Text>
             <Text style={[styles.emptyText, { color: theme.neutral }]}>
-              {searchText ? `No words found for "${searchText}"` : 'No vocabulary words yet'}
+              Start chatting with your AI teacher to discover new Spanish words. 
+              Every Spanish word you encounter will appear here!
             </Text>
           </View>
+        ) : filteredVocab.length === 0 ? (
+          <View style={styles.emptySearchState}>
+            <MaterialIcons name="search-off" size={48} color={theme.neutral} />
+            <Text style={[styles.emptyText, { color: theme.neutral }]}>
+              No words found for "{searchText}"
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.wordsContainer}>
+            {filteredVocab.map((item, index) => (
+              <VocabCard 
+                key={`${item.word}-${item.dateAdded.getTime()}`}
+                word={item}
+                onPlayAudio={handlePlayAudio}
+                isPlayingAudio={isPlayingAudio}
+              />
+            ))}
+          </View>
         )}
-      </View>
+      </ScrollView>
 
-      {/* Fixed Practice Button */}
-      <View style={styles.buttonContainer}>
-        <Button
-          title={`Practice ${vocabulary.filter(v => !v.learned).length} Words`}
-          variant="primary"
-          size="large"
-          onPress={() => console.log('Starting vocabulary practice')}
-          disabled={vocabulary.filter(v => !v.learned).length === 0}
-        />
-      </View>
-    </ScreenContainer>
+      {/* Bottom Section with separator and practice button */}
+      {vocabulary.length > 0 && (
+        <View 
+          style={styles.bottomSection}
+          onLayout={(e) => setFooterHeight(e.nativeEvent.layout.height)}
+          pointerEvents="box-none"
+        >
+          {/* Green separator line */}
+          <View style={[styles.separator, { backgroundColor: theme.primary }]} />
+          
+          {/* Black section with two buttons */}
+          <View style={styles.practiceSection}>
+            <View style={styles.buttonsRow}>
+              <View style={styles.buttonWrapper}>
+                <Pressable
+                  style={[styles.chatButton, {
+                    borderColor: theme.primary,
+                    backgroundColor: 'transparent'
+                  }]}
+                  onPress={() => router.push('/(drawer)/chat')}
+                >
+                  <Text style={[styles.chatButtonText, { color: theme.primary }]}>
+                    Chat Further
+                  </Text>
+                </Pressable>
+              </View>
+              <View style={styles.buttonWrapper}>
+                <Button
+                  title="Practice Words"
+                  variant="primary"
+                  size="medium"
+                  onPress={() => router.push('/(drawer)/practice')}
+                />
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  headerSection: {
-    marginBottom: 24,
-    backgroundColor: 'transparent',
+  container: {
+    flex: 1,
+    paddingTop: 20,
+    paddingHorizontal: 20,
   },
-  titleArea: {
-    marginBottom: 20,
+  header: {
+    marginBottom: 24,
     backgroundColor: 'transparent',
   },
   title: {
     fontSize: 32,
     fontWeight: '800',
-    marginBottom: 12,
+    marginBottom: 8,
     textAlign: 'center',
   },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 12,
-    backgroundColor: 'transparent',
-  },
-  statBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 6,
-  },
-  statText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  progressContainer: {
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-  },
-  progressCircle: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    borderWidth: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  progressCircleInner: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  progressPercentage: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  progressLabel: {
-    fontSize: 10,
-    fontWeight: '500',
+  subtitle: {
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
     borderRadius: 25,
-    borderWidth: 2,
-    marginBottom: 24,
-    gap: 12,
+    borderWidth: 1,
+    marginBottom: 20,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  searchIconContainer: {
+    padding: 8,
+    borderRadius: 20,
+    marginRight: 8,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
     paddingVertical: 4,
   },
-  vocabSection: {
-    gap: 12,
-    marginBottom: 24,
+  clearButton: {
+    padding: 6,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  vocabList: {
+    flex: 1,
+  },
+  vocabListContent: {
+    // Dynamic paddingBottom added in component
+  },
+  wordsContainer: {
+    gap: 16,
     backgroundColor: 'transparent',
   },
   vocabCard: {
-    borderRadius: 16,
-    borderWidth: 2,
-    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 14,
   },
-  wordContainer: {
+  vocabContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: 'transparent',
   },
   wordInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flex: 1,
     backgroundColor: 'transparent',
   },
   foreignWord: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   translation: {
-    fontSize: 16,
-    lineHeight: 20,
-    opacity: 0.8,
+    fontSize: 15,
+    lineHeight: 18,
   },
-  statusIcon: {
-    width: 32,
-    height: 32,
+  audioButton: {
+    padding: 8,
     borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderWidth: 1,
   },
-  emptyState: {
+  bottomSection: {
+    position: 'absolute',
+    bottom: 0, // Flush with content area bottom (React Navigation handles tab bar space)
+    left: 0,
+    right: 0,
+  },
+  separator: {
+    height: 2,
+    marginHorizontal: 0, // Full width - edge to edge
+    borderRadius: 0,
+  },
+  practiceSection: {
+    backgroundColor: '#1a1a1a',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonsRow: {
+    flexDirection: 'row',
+    gap: 16,
+    width: '100%',
+    backgroundColor: 'transparent',
+  },
+  buttonWrapper: {
+    flex: 1, // Equal width for both buttons
+    backgroundColor: 'transparent',
+  },
+  chatButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  emptySearchState: {
     alignItems: 'center',
     paddingVertical: 40,
     backgroundColor: 'transparent',
   },
-  emptyText: {
-    fontSize: 16,
-    marginTop: 12,
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 40,
+    backgroundColor: 'transparent',
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginTop: 16,
+    marginBottom: 8,
     textAlign: 'center',
   },
-  buttonContainer: {
-    paddingTop: 8,
-    backgroundColor: 'transparent',
+  emptyText: {
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: 'center',
   },
 });

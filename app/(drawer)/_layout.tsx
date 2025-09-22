@@ -7,11 +7,27 @@ import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { router } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useState, useEffect } from 'react';
+import UserStatsService from '../../services/userStats';
 
 // Custom header component for Duolingo-style stats
 function CustomTabBarHeader() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
+  const [stats, setStats] = useState({ streak: 0, xp: 0, level: 0 });
+  const userStatsService = UserStatsService.getInstance();
+
+  // Load and refresh stats
+  useEffect(() => {
+    const loadStats = () => {
+      const currentStats = userStatsService.getStats();
+      setStats(currentStats);
+    };
+
+    loadStats();
+    const interval = setInterval(loadStats, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <SafeAreaView edges={['top']} style={[styles.header, { backgroundColor: theme.background }]}>
@@ -19,13 +35,18 @@ function CustomTabBarHeader() {
         {/* Streak and Level in a row */}
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
-            <MaterialIcons name="local-fire-department" size={20} color={theme.accent} />
-            <Text style={[styles.statNumber, { color: theme.accent }]}>0</Text>
+            <MaterialIcons name="local-fire-department" size={18} color={theme.accent} />
+            <Text style={[styles.statNumber, { color: theme.accent }]}>{stats.streak}</Text>
           </View>
           
           <View style={styles.statItem}>
-            <MaterialIcons name="emoji-events" size={20} color={theme.primary} />
-            <Text style={[styles.statNumber, { color: theme.primary }]}>12 XP</Text>
+            <MaterialIcons name="emoji-events" size={18} color={theme.primary} />
+            <Text style={[styles.statNumber, { color: theme.primary }]}>{stats.xp} XP</Text>
+          </View>
+          
+          <View style={styles.statItem}>
+            <MaterialIcons name="trending-up" size={18} color={theme.secondary} />
+            <Text style={[styles.statNumber, { color: theme.secondary }]}>{stats.level}</Text>
           </View>
         </View>
 
@@ -75,11 +96,11 @@ export default function TabsLayout() {
         }}
       >
         <Tabs.Screen 
-          name="practice" 
+          name="home" 
           options={{
-            title: 'Learn',
+            title: 'Home',
             tabBarIcon: ({ color, size }) => (
-              <MaterialIcons name="school" size={size} color={color} />
+              <MaterialIcons name="home" size={size} color={color} />
             ),
           }} 
         />
@@ -99,6 +120,24 @@ export default function TabsLayout() {
             tabBarIcon: ({ color, size }) => (
               <FontAwesome name="book" size={size} color={color} />
             ),
+          }} 
+        />
+        <Tabs.Screen 
+          name="practice" 
+          options={{
+            title: 'Practice',
+            tabBarIcon: ({ color, size }) => (
+              <MaterialIcons name="fitness-center" size={size} color={color} />
+            ),
+          }} 
+        />
+        
+        {/* Quiz screen - hidden from tab bar */}
+        <Tabs.Screen 
+          name="quiz" 
+          options={{ 
+            title: 'Quiz',
+            href: null, // Hide from tab bar
           }} 
         />
         
@@ -150,7 +189,7 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 24,
+    gap: 16, // Smaller gap to fit 3 stats
   },
   statItem: {
     flexDirection: 'row',

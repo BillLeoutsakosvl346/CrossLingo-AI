@@ -38,13 +38,21 @@ export class TextToSpeechService {
         return { audioUri: this.audioCache.get(cacheKey)! };
       }
 
+      // Clear any stuck loading states (older than 30 seconds)
+      this.clearStuckLoading();
+
       // Check if already loading
       if (this.loadingWords.has(cacheKey)) {
         return { error: 'Audio is being generated, please wait...' };
       }
 
-      // Mark as loading
+      // Mark as loading with timeout protection
       this.loadingWords.add(cacheKey);
+      
+      // Auto-clear loading state after 30 seconds to prevent stuck words
+      setTimeout(() => {
+        this.loadingWords.delete(cacheKey);
+      }, 30000);
 
       // Direct API call to Google TTS
       const apiKey = getGoogleApiKey();
@@ -81,11 +89,16 @@ export class TextToSpeechService {
       }
 
       const data = await response.json();
+      console.log('🔍 Google TTS Response structure:', JSON.stringify(data, null, 2));
+      
       const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
       
       if (!audioData) {
+        console.error('❌ No audio data in response. Full response:', data);
         throw new Error('No audio data received from Google TTS');
       }
+      
+      console.log('✅ Audio data found, length:', audioData.length);
 
       // Convert PCM to WAV for playback
       const pcmBuffer = Buffer.from(audioData, 'base64');
@@ -188,6 +201,21 @@ export class TextToSpeechService {
    */
   public getCacheSize(): number {
     return this.audioCache.size;
+  }
+
+  /**
+   * Clear stuck loading states and force reset a specific word
+   */
+  public forceResetWord(spanishWord: string): void {
+    const cacheKey = spanishWord.toLowerCase().trim();
+    this.loadingWords.delete(cacheKey);
+  }
+
+  /**
+   * Clear stuck loading states (internal cleanup)
+   */
+  private clearStuckLoading(): void {
+    // This could be enhanced with timestamps if needed, but the timeout approach is simpler
   }
 }
 

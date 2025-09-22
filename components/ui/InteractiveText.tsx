@@ -32,24 +32,32 @@ const TranslationPopup = ({ visible, word, translation, onClose }: TranslationPo
 
     // Check if audio is already cached
     if (ttsService.isAudioCached(word)) {
-      console.log('🔊 Playing cached pronunciation');
       await ttsService.playWord(word);
       return;
     }
 
+    // If word is stuck in loading state, allow force reset on double-tap
+    if (ttsService.isGenerating(word)) {
+      ttsService.forceResetWord(word);
+      console.log('🔄 Reset stuck TTS for:', word);
+    }
+
     // Generate new audio
     setIsGeneratingAudio(true);
-    const response = await ttsService.generateSpeech(word);
     
-    if (response.error) {
-      console.error('TTS Error:', response.error);
-      // Could show error to user here if needed
-    } else if (response.audioUri) {
-      // Audio generated successfully, play it
-      await ttsService.playWord(word);
+    try {
+      const response = await ttsService.generateSpeech(word);
+      
+      if (response.error) {
+        console.error('TTS Error:', response.error);
+      } else if (response.audioUri) {
+        await ttsService.playWord(word);
+      }
+    } catch (error) {
+      console.error('TTS generation failed:', error);
+    } finally {
+      setIsGeneratingAudio(false);
     }
-    
-    setIsGeneratingAudio(false);
   };
 
   return (
@@ -108,7 +116,9 @@ const TranslationPopup = ({ visible, word, translation, onClose }: TranslationPo
                 ? 'Generating pronunciation...' 
                 : ttsService.isAudioCached(word) 
                   ? 'Tap to hear again'
-                  : 'Tap to hear pronunciation'
+                  : ttsService.isGenerating(word)
+                    ? 'Tap again to retry (stuck?)'
+                    : 'Tap to hear pronunciation'
               }
             </Text>
           </View>

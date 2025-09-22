@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from 'react';
 import { StyleSheet } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -7,6 +8,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import ScreenContainer from '@/components/ui/ScreenContainer';
 import Card from '@/components/ui/Card';
+import UserStatsService from '../../../services/userStats';
 
 interface SettingsOptionProps {
   title: string;
@@ -18,6 +20,20 @@ interface SettingsOptionProps {
 export default function SettingsScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
+  const [stats, setStats] = useState({ streak: 0, xp: 0, level: 0 });
+  const userStatsService = UserStatsService.getInstance();
+
+  // Load stats
+  useEffect(() => {
+    const loadStats = () => {
+      const currentStats = userStatsService.getStats();
+      setStats(currentStats);
+    };
+
+    loadStats();
+    const interval = setInterval(loadStats, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
   const SettingsOption = ({ title, icon, onPress, iconType = 'FontAwesome' }: SettingsOptionProps) => (
     <Card onPress={onPress}>
@@ -61,9 +77,9 @@ export default function SettingsScreen() {
       </View>
       
       <View style={styles.statsSection}>
-        <StatCard icon="local-fire-department" value="0" label="Day Streak" color={theme.accent} />
-        <StatCard icon="emoji-events" value="12" label="Total XP" color={theme.primary} />
-        <StatCard icon="trending-up" value="0" label="Level" color={theme.secondary} />
+        <StatCard icon="local-fire-department" value={stats.streak} label="Day Streak" color={theme.accent} />
+        <StatCard icon="emoji-events" value={stats.xp} label="Total XP" color={theme.primary} />
+        <StatCard icon="trending-up" value={stats.level} label="Level" color={theme.secondary} />
       </View>
       
       <View style={styles.optionsContainer}>
