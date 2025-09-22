@@ -1,10 +1,10 @@
-import React, { useState, useRef } from 'react';
-import { StyleSheet, TextInput, Pressable, ScrollView, Platform, KeyboardAvoidingView } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { StyleSheet, TextInput, Pressable, ScrollView, Platform, KeyboardAvoidingView, Keyboard } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Message {
   id: string;
@@ -20,7 +20,31 @@ export default function ChatScreen() {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const scrollViewRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+        // Scroll to bottom when keyboard appears
+        setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+      }
+    );
+    
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => {
+        setKeyboardHeight(0);
+      }
+    );
+
+    return () => {
+      keyboardDidHideListener?.remove();
+      keyboardDidShowListener?.remove();
+    };
+  }, []);
 
   const sendMessage = () => {
     const txt = inputText.trim();
@@ -41,22 +65,19 @@ export default function ChatScreen() {
       styles.messageBubble,
       message.isUser ? styles.userBubble : styles.aiBubble,
       {
-        backgroundColor: message.isUser ? theme.text : 'transparent',
-        borderColor: theme.text,
+        backgroundColor: message.isUser ? theme.primary : theme.surfaceVariant,
+        borderColor: theme.secondary,
         borderWidth: message.isUser ? 0 : 1,
       }
     ]}>
       <Text style={[styles.messageText, { color: message.isUser ? theme.background : theme.text }]}>
         {message.text}
       </Text>
-      <Text style={[styles.timestamp, { color: (message.isUser ? theme.background : theme.text) + '80' }]}>
-        {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-      </Text>
     </View>
   );
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+    <View style={[{ flex: 1 }, { backgroundColor: theme.background }]}>
       <KeyboardAvoidingView 
         style={{ flex: 1 }} 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -79,53 +100,69 @@ export default function ChatScreen() {
         {/* Input Footer */}
         <View style={[styles.inputContainer, {
           backgroundColor: theme.background,
-          borderTopColor: 'rgba(255,255,255,0.1)',
-          paddingBottom: insets.bottom || 8,
+          borderTopColor: theme.border,
+          paddingTop: 8, // Very narrow equal spacing
+          paddingBottom: 8, // Restore original narrow spacing
+          marginBottom: keyboardHeight > 0 ? Math.min(keyboardHeight * 0.25, 80) : 0, // Move up a bit more when keyboard appears
         }]}>
-          <View style={[styles.inputWrapper, { borderColor: theme.text }]}>
+          <View style={[styles.inputWrapper, { 
+            borderColor: theme.border,
+            backgroundColor: theme.surface,
+          }]}>
             <TextInput
               style={[styles.textInput, { color: theme.text }]}
-              placeholder="Type a message..."
-              placeholderTextColor={theme.text + '60'}
+              placeholder="Chat with your teacher..."
+              placeholderTextColor={theme.neutral}
               value={inputText}
               onChangeText={setInputText}
               multiline
               maxLength={500}
               onSubmitEditing={sendMessage}
               blurOnSubmit={false}
-              onFocus={() => setTimeout(
-                () => scrollViewRef.current?.scrollToEnd({ animated: true }), 300
-              )}
             />
             <Pressable
-              style={[styles.sendButton, { backgroundColor: theme.text }]}
+              style={[
+                styles.sendButton, 
+                { 
+                  backgroundColor: inputText.trim() ? theme.primary : theme.neutral,
+                }
+              ]}
               onPress={sendMessage}
-              disabled={inputText.trim() === ''}
+              disabled={!inputText.trim()}
             >
               <Ionicons name="arrow-up" size={24} color={theme.background} />
             </Pressable>
           </View>
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   messagesContainer: { flex: 1 },
-  messagesContent: { padding: 16 },
+  messagesContent: { paddingHorizontal: 16, paddingTop: 16 },
   messageBubble: {
-    maxWidth: '80%',
-    marginBottom: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 100,
+    maxWidth: '75%',
+    marginBottom: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 18,
     alignSelf: 'flex-end',
   },
-  userBubble: { borderBottomRightRadius: 8 },
-  aiBubble: { alignSelf: 'flex-start', borderBottomLeftRadius: 8 },
-  messageText: { fontSize: 16, lineHeight: 20, marginBottom: 4 },
-  timestamp: { fontSize: 12, alignSelf: 'flex-end' },
+  userBubble: { 
+    borderBottomRightRadius: 4,
+    marginLeft: '25%',
+  },
+  aiBubble: { 
+    alignSelf: 'flex-start', 
+    borderBottomLeftRadius: 4,
+    marginRight: '25%',
+  },
+  messageText: { 
+    fontSize: 16, 
+    lineHeight: 20,
+  },
   inputContainer: {
     paddingHorizontal: 16,
     paddingTop: 12,
