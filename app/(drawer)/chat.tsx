@@ -1,16 +1,22 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, TextInput, Pressable, ScrollView, Platform, KeyboardAvoidingView, Keyboard } from 'react-native';
+import { StyleSheet, TextInput, Pressable, ScrollView, Platform, KeyboardAvoidingView, Keyboard, ActivityIndicator, Animated } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import OpenAIService from '../../services/openai';
+import InteractiveText from '../../components/ui/InteractiveText';
+import VocabularyTrackerService from '../../services/vocabularyTracker';
 
 interface Message {
   id: string;
   text: string;
   timestamp: Date;
   isUser: boolean;
+  status?: 'sending' | 'sent' | 'failed';
+  isError?: boolean;
 }
 
 export default function ChatScreen() {
@@ -18,10 +24,22 @@ export default function ChatScreen() {
   const theme = Colors[colorScheme ?? 'light'];
   const insets = useSafeAreaInsets();
 
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: '1',
+      text: '<foreign>[¡Hola!]==[Hello!]</foreign> I\'m your AI <foreign>[profesor]==[teacher]</foreign>. I\'m here to help you learn <foreign>[español]==[Spanish]</foreign> through natural conversation. What would you like to work on today?',
+      timestamp: new Date(),
+      isUser: false,
+      status: 'sent'
+    }
+  ]);
   const [inputText, setInputText] = useState('');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
+  const openAIService = OpenAIService.getInstance();
+  const vocabularyTracker = VocabularyTrackerService.getInstance();
 
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener(
@@ -46,33 +64,211 @@ export default function ChatScreen() {
     };
   }, []);
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     const txt = inputText.trim();
-    if (!txt) return;
-    setMessages(prev => [...prev, {
+    if (!txt || isLoading) return;
+
+    // Create user message
+    const userMessage: Message = {
       id: Date.now().toString(),
       text: txt,
       timestamp: new Date(),
       isUser: true,
-    }]);
+      status: 'sent'
+    };
+
+    // Add user message and clear input
+    setMessages(prev => [...prev, userMessage]);
     setInputText('');
+    setIsLoading(true);
+    setIsTyping(true);
+
     // Scroll to bottom after sending message
     setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+
+    try {
+      // Send message to OpenAI
+      const response = await openAIService.sendMessage(txt);
+      
+      // Create AI message
+      const aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: response.error || response.message,
+        timestamp: new Date(),
+        isUser: false,
+        status: response.error ? 'failed' : 'sent',
+        isError: !!response.error
+      };
+      
+      // Track vocabulary if successful
+      if (!response.error) {
+        vocabularyTracker.processMessage(response.message);
+      }
+      
+      setMessages(prev => [...prev, aiMessage]);
+    } catch (error) {
+      // Handle unexpected errors
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: 'Sorry, something went wrong. Please try again.',
+        timestamp: new Date(),
+        isUser: false,
+        status: 'failed',
+        isError: true
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+      setIsTyping(false);
+      // Scroll to bottom after AI response
+      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+    }
   };
 
   const MessageBubble = ({ message }: { message: Message }) => (
     <View style={[
-      styles.messageBubble,
-      message.isUser ? styles.userBubble : styles.aiBubble,
-      {
-        backgroundColor: message.isUser ? theme.primary : theme.surfaceVariant,
-        borderColor: theme.secondary,
-        borderWidth: message.isUser ? 0 : 1,
-      }
+      styles.messageBubbleContainer,
+      message.isUser ? styles.userContainer : styles.aiContainer
     ]}>
-      <Text style={[styles.messageText, { color: message.isUser ? theme.background : theme.text }]}>
-        {message.text}
-      </Text>
+      {/* AI Badge */}
+      {!message.isUser && !message.isError && (
+        <View style={[styles.aiBadge, { backgroundColor: theme.primary + '20' }]}>
+          <MaterialIcons name="smart-toy" size={12} color={theme.primary} />
+          <Text style={[styles.badgeText, { color: theme.primary }]}>AI</Text>
+        </View>
+      )}
+      
+      <View style={[
+        styles.messageBubble,
+        message.isUser ? styles.userBubble : styles.aiBubble,
+        {
+          backgroundColor: message.isError 
+            ? '#ffebee' 
+            : message.isUser 
+              ? theme.primary 
+              : theme.background,
+          borderColor: message.isError 
+            ? '#f44336' 
+            : message.isUser 
+              ? 'transparent'
+              : theme.border,
+          borderWidth: message.isUser ? 0 : 1,
+          shadowColor: message.isUser ? theme.primary : '#000',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: message.isUser ? 0.3 : 0.1,
+          shadowRadius: 2,
+          elevation: message.isUser ? 3 : 1,
+        }
+      ]}>
+        {message.isUser || message.isError ? (
+          <Text style={[
+            styles.messageText, 
+            { 
+              color: message.isError 
+                ? '#c62828' 
+                : theme.background 
+            }
+          ]}>
+            {message.text}
+          </Text>
+        ) : (
+          <InteractiveText
+            text={message.text}
+            style={[styles.messageText, { color: theme.text }]}
+            isUserMessage={false}
+            messageId={message.id}
+          />
+        )}
+        
+        {message.isError && (
+          <View style={styles.errorIndicator}>
+            <MaterialIcons 
+              name="error-outline" 
+              size={16} 
+              color="#c62828" 
+            />
+          </View>
+        )}
+      </View>
+    </View>
+  );
+
+  const AnimatedDots = () => {
+    const dot1 = useRef(new Animated.Value(0)).current;
+    const dot2 = useRef(new Animated.Value(0)).current;
+    const dot3 = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+      const animateDot = (dot: Animated.Value, delay: number) => {
+        return Animated.loop(
+          Animated.sequence([
+            Animated.delay(delay),
+            Animated.timing(dot, {
+              toValue: -8,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+            Animated.timing(dot, {
+              toValue: 0,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+          ])
+        );
+      };
+
+      const animation = Animated.parallel([
+        animateDot(dot1, 0),
+        animateDot(dot2, 150),
+        animateDot(dot3, 300),
+      ]);
+
+      animation.start();
+
+      return () => animation.stop();
+    }, []);
+
+    return (
+      <View style={styles.dotsContainer}>
+        {[dot1, dot2, dot3].map((dot, index) => (
+          <Animated.View
+            key={index}
+            style={[
+              styles.dot,
+              {
+                backgroundColor: theme.neutral,
+                transform: [{ translateY: dot }],
+              },
+            ]}
+          />
+        ))}
+      </View>
+    );
+  };
+
+  const TypingIndicator = () => (
+    <View style={[styles.messageBubbleContainer, styles.aiContainer]}>
+      <View style={[styles.aiBadge, { backgroundColor: theme.primary + '20' }]}>
+        <MaterialIcons name="smart-toy" size={12} color={theme.primary} />
+        <Text style={[styles.badgeText, { color: theme.primary }]}>AI</Text>
+      </View>
+      
+      <View style={[
+        styles.messageBubble,
+        styles.aiBubble,
+        {
+          backgroundColor: theme.background,
+          borderColor: theme.border,
+          borderWidth: 1,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.1,
+          shadowRadius: 2,
+          elevation: 1,
+        }
+      ]}>
+        <AnimatedDots />
+      </View>
     </View>
   );
 
@@ -95,6 +291,7 @@ export default function ChatScreen() {
           keyboardShouldPersistTaps="handled"
         >
           {messages.map(m => <MessageBubble key={m.id} message={m} />)}
+          {isTyping && <TypingIndicator />}
         </ScrollView>
 
         {/* Input Footer */}
@@ -111,7 +308,7 @@ export default function ChatScreen() {
           }]}>
             <TextInput
               style={[styles.textInput, { color: theme.text }]}
-              placeholder="Chat with your teacher..."
+              placeholder={isLoading ? "Waiting for response..." : "Chat with your teacher..."}
               placeholderTextColor={theme.neutral}
               value={inputText}
               onChangeText={setInputText}
@@ -119,18 +316,24 @@ export default function ChatScreen() {
               maxLength={500}
               onSubmitEditing={sendMessage}
               blurOnSubmit={false}
+              editable={!isLoading}
             />
             <Pressable
               style={[
                 styles.sendButton, 
                 { 
-                  backgroundColor: inputText.trim() ? theme.primary : theme.neutral,
+                  backgroundColor: inputText.trim() && !isLoading ? theme.primary : theme.neutral,
+                  opacity: isLoading ? 0.6 : 1,
                 }
               ]}
               onPress={sendMessage}
-              disabled={!inputText.trim()}
+              disabled={!inputText.trim() || isLoading}
             >
-              <Ionicons name="arrow-up" size={24} color={theme.background} />
+              {isLoading ? (
+                <ActivityIndicator size="small" color={theme.background} />
+              ) : (
+                <Ionicons name="arrow-up" size={24} color={theme.background} />
+              )}
             </Pressable>
           </View>
         </View>
@@ -142,26 +345,68 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   messagesContainer: { flex: 1 },
   messagesContent: { paddingHorizontal: 16, paddingTop: 16 },
+  messageBubbleContainer: {
+    marginBottom: 12,
+    alignItems: 'flex-end',
+  },
+  userContainer: {
+    alignItems: 'flex-end',
+    marginLeft: '20%',
+  },
+  aiContainer: {
+    alignItems: 'flex-start',
+    marginRight: '20%',
+  },
+  aiBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    marginBottom: 4,
+    gap: 4,
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
   messageBubble: {
-    maxWidth: '75%',
-    marginBottom: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 18,
-    alignSelf: 'flex-end',
+    maxWidth: '100%',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
   },
   userBubble: { 
-    borderBottomRightRadius: 4,
-    marginLeft: '25%',
+    borderBottomRightRadius: 6,
+    alignSelf: 'flex-end',
   },
   aiBubble: { 
-    alignSelf: 'flex-start', 
-    borderBottomLeftRadius: 4,
-    marginRight: '25%',
+    borderBottomLeftRadius: 6,
+    alignSelf: 'flex-start',
   },
   messageText: { 
     fontSize: 16, 
-    lineHeight: 20,
+    lineHeight: 22,
+    letterSpacing: 0.2,
+  },
+  errorIndicator: {
+    marginTop: 6,
+    alignSelf: 'flex-end',
+  },
+  dotsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: 'transparent',
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginHorizontal: 2,
   },
   inputContainer: {
     paddingHorizontal: 16,
