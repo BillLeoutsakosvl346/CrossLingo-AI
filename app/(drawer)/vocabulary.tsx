@@ -8,13 +8,13 @@ import Button from '@/components/ui/Button';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { router } from 'expo-router';
-import VocabularyTrackerService, { LearnedWord } from '../../services/vocabularyTracker';
-import TextToSpeechService from '../../services/textToSpeech';
+import { useVocabulary, useTextToSpeech } from '../../src/lib/hooks';
+import { LearnedWord } from '../../src/types';
 
 interface VocabCardProps {
   word: LearnedWord;
   onPlayAudio: (word: string) => void;
-  isPlayingAudio: string | null;
+  isGeneratingAudio: string | null;
 }
 
 export default function VocabularyScreen() {
@@ -22,26 +22,10 @@ export default function VocabularyScreen() {
   const theme = Colors[colorScheme ?? 'light'];
   const tabBarHeight = useBottomTabBarHeight();
   const [searchText, setSearchText] = useState('');
-  const [vocabulary, setVocabulary] = useState<LearnedWord[]>([]);
-  const [isPlayingAudio, setIsPlayingAudio] = useState<string | null>(null);
   const [footerHeight, setFooterHeight] = useState(0);
   
-  const vocabularyTracker = VocabularyTrackerService.getInstance();
-  const ttsService = TextToSpeechService.getInstance();
-
-  // Load vocabulary on component mount and refresh periodically
-  useEffect(() => {
-    const loadVocabulary = () => {
-      const words = vocabularyTracker.getLearnedWords();
-      setVocabulary(words);
-    };
-
-    loadVocabulary();
-    
-    // Refresh vocabulary every 2 seconds to catch new words from chat
-    const interval = setInterval(loadVocabulary, 2000);
-    return () => clearInterval(interval);
-  }, []);
+  const { words: vocabulary } = useVocabulary();
+  const { generateAndPlaySpeech, isGenerating } = useTextToSpeech();
 
   // Filter vocabulary based on search
   const filteredVocab = vocabulary.filter(item =>
@@ -51,30 +35,16 @@ export default function VocabularyScreen() {
 
   const progressPercent = vocabulary.length > 0 ? 100 : 0; // All words from chat are "learned"
 
-  const handlePlayAudio = async (spanishWord: string) => {
-    if (isPlayingAudio === spanishWord) return;
+  const handlePlayAudio = async (word: string) => {
+    if (isGenerating === word) return;
 
-    setIsPlayingAudio(spanishWord);
-    
-    try {
-      // Check if audio is cached
-      if (ttsService.isAudioCached(spanishWord)) {
-        await ttsService.playWord(spanishWord);
-      } else {
-        // Generate and play new audio
-        const response = await ttsService.generateSpeech(spanishWord);
-        if (!response.error && response.audioUri) {
-          await ttsService.playWord(spanishWord);
-        }
-      }
-    } catch (error) {
-      console.error('Audio playback failed:', error);
-    } finally {
-      setTimeout(() => setIsPlayingAudio(null), 1000); // Reset after 1 second
+    const result = await generateAndPlaySpeech(word);
+    if (!result?.success) {
+      console.error('TTS Error:', result?.error);
     }
   };
 
-  const VocabCard = ({ word, onPlayAudio, isPlayingAudio }: VocabCardProps) => (
+  const VocabCard = ({ word, onPlayAudio, isGeneratingAudio }: VocabCardProps) => (
     <View style={[styles.vocabCard, { 
       backgroundColor: theme.surface,
       borderColor: theme.border
@@ -91,13 +61,13 @@ export default function VocabularyScreen() {
             borderColor: theme.primary + '25'
           }]}
           onPress={() => onPlayAudio(word.word)}
-          disabled={isPlayingAudio === word.word}
+          disabled={isGeneratingAudio === word.word}
         >
-          {isPlayingAudio === word.word ? (
+          {isGeneratingAudio === word.word ? (
             <ActivityIndicator size="small" color={theme.primary} />
           ) : (
             <MaterialIcons 
-              name={ttsService.isAudioCached(word.word) ? "volume-up" : "record-voice-over"} 
+              name="volume-up"
               size={18} 
               color={theme.primary} 
             />
@@ -179,7 +149,7 @@ export default function VocabularyScreen() {
                 key={`${item.word}-${item.dateAdded.getTime()}`}
                 word={item}
                 onPlayAudio={handlePlayAudio}
-                isPlayingAudio={isPlayingAudio}
+                isGeneratingAudio={isGenerating}
               />
             ))}
           </View>

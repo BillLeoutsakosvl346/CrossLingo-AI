@@ -6,8 +6,12 @@ import Colors from '@/constants/Colors';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
-import QuizService, { QuizQuestion, QuizResult } from '../../services/quizService';
+import { useVocabulary } from '../../src/lib/hooks';
+import { useUserStatsStore } from '../../src/lib/stores';
+import { quizGeneratorUtil } from '../../src/lib/utils/quizGenerator';
+import { QuizQuestion, QuizResult } from '../../src/types';
 import { router } from 'expo-router';
+import { logger } from '../../src/lib/utils/logger';
 
 export default function QuizScreen() {
   const colorScheme = useColorScheme();
@@ -20,14 +24,22 @@ export default function QuizScreen() {
   const [showResult, setShowResult] = useState(false);
   const [quizResult, setQuizResult] = useState<QuizResult | null>(null);
   
-  const quizService = QuizService.getInstance();
+  const { words } = useVocabulary();
+  const addXP = useUserStatsStore((state) => state.addXP);
 
   // Initialize quiz
   useEffect(() => {
-    const generatedQuestions = quizService.generateQuiz();
+    const generatedQuestions = quizGeneratorUtil.generateQuiz(words);
     setQuestions(generatedQuestions);
     setUserAnswers(new Array(generatedQuestions.length).fill(''));
-  }, []);
+    
+    if (generatedQuestions.length > 0) {
+      logger.userAction('Quiz', 'startQuiz', { 
+        questionCount: generatedQuestions.length,
+        vocabularySize: words.length 
+      });
+    }
+  }, [words]);
 
   const currentQuestion = questions[currentQuestionIndex];
   const isLastQuestion = currentQuestionIndex === questions.length - 1;
@@ -35,6 +47,14 @@ export default function QuizScreen() {
 
   const handleAnswerSelect = (answer: string) => {
     if (hasAnswered) return; // Prevent changing answer after selection
+    
+    const isCorrect = answer === currentQuestion?.correctAnswer;
+    logger.userAction('Quiz', 'answerQuestion', { 
+      questionIndex: currentQuestionIndex,
+      word: currentQuestion?.word.word,
+      isCorrect,
+      answer 
+    });
     
     setSelectedAnswer(answer);
     setHasAnswered(true);
@@ -50,7 +70,19 @@ export default function QuizScreen() {
 
     if (isLastQuestion) {
       // Calculate and show results
-      const result = quizService.calculateResults(questions, [...newAnswers]);
+      const result = quizGeneratorUtil.calculateResults(questions, [...newAnswers]);
+      
+      logger.info('Quiz', 'Quiz completed', {
+        score: `${result.correctAnswers}/${result.totalQuestions}`,
+        percentage: result.percentage,
+        xpEarned: result.xpEarned
+      });
+      
+      // Add XP to user stats
+      if (result.xpEarned) {
+        addXP(result.xpEarned);
+      }
+      
       setQuizResult(result);
       setShowResult(true);
     } else {
@@ -62,7 +94,7 @@ export default function QuizScreen() {
   };
 
   const handleRetakeQuiz = () => {
-    const newQuestions = quizService.generateQuiz();
+    const newQuestions = quizGeneratorUtil.generateQuiz(words);
     setQuestions(newQuestions);
     setCurrentQuestionIndex(0);
     setUserAnswers(new Array(newQuestions.length).fill(''));

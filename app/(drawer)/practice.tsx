@@ -1,32 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { StyleSheet } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import Button from '@/components/ui/Button';
-import VocabularyTrackerService, { LearnedWord } from '../../services/vocabularyTracker';
+import { useVocabulary } from '../../src/lib/hooks';
 import { router } from 'expo-router';
 
 export default function PracticeScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
-  const [vocabulary, setVocabulary] = useState<LearnedWord[]>([]);
-  const vocabularyTracker = VocabularyTrackerService.getInstance();
+  const { wordCount } = useVocabulary();
 
-  // Load vocabulary count
-  useEffect(() => {
-    const loadVocabulary = () => {
-      const words = vocabularyTracker.getLearnedWords();
-      setVocabulary(words);
-    };
-
-    loadVocabulary();
-    const interval = setInterval(loadVocabulary, 2000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const hasEnoughWords = vocabulary.length >= 5;
+  const hasEnoughWords = wordCount >= 5;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -44,7 +31,7 @@ export default function PracticeScreen() {
         {hasEnoughWords ? (
           <>
             <Text style={[styles.subtitle, { color: theme.neutral }]}>
-              Ready to test your knowledge! You have {vocabulary.length} words to practice with.
+              Ready to test your knowledge! You have {wordCount} words to practice with.
             </Text>
             
             <View style={styles.buttonContainer}>
@@ -63,7 +50,7 @@ export default function PracticeScreen() {
             </Text>
             
             <Text style={[styles.statusText, { color: theme.text }]}>
-              Current: {vocabulary.length} / 5 words
+              Current: {wordCount} / 5 words
             </Text>
             
             <View style={styles.buttonContainer}>

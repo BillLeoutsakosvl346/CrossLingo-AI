@@ -6,40 +6,20 @@ import Colors from '@/constants/Colors';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import OpenAIService from '../../services/openai';
 import InteractiveText from '../../components/ui/InteractiveText';
-import VocabularyTrackerService from '../../services/vocabularyTracker';
-
-interface Message {
-  id: string;
-  text: string;
-  timestamp: Date;
-  isUser: boolean;
-  status?: 'sending' | 'sent' | 'failed';
-  isError?: boolean;
-}
+import { useChat } from '../../src/lib/hooks';
+import { Message } from '../../src/types';
 
 export default function ChatScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
   const insets = useSafeAreaInsets();
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      text: '<foreign>[¡Hola!]==[Hello!]</foreign> I\'m your AI <foreign>[profesor]==[teacher]</foreign>. I\'m here to help you learn <foreign>[español]==[Spanish]</foreign> through natural conversation. What would you like to work on today?',
-      timestamp: new Date(),
-      isUser: false,
-      status: 'sent'
-    }
-  ]);
+  const { messages, isLoading, sendMessage: sendChatMessage, addMessage } = useChat();
   const [inputText, setInputText] = useState('');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
-  const openAIService = OpenAIService.getInstance();
-  const vocabularyTracker = VocabularyTrackerService.getInstance();
 
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener(
@@ -78,17 +58,16 @@ export default function ChatScreen() {
     };
 
     // Add user message and clear input
-    setMessages(prev => [...prev, userMessage]);
+    addMessage(userMessage);
     setInputText('');
-    setIsLoading(true);
     setIsTyping(true);
 
     // Scroll to bottom after sending message
     setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
 
     try {
-      // Send message to OpenAI
-      const response = await openAIService.sendMessage(txt);
+      // Send message using the new hook
+      const response = await sendChatMessage(txt);
       
       // Create AI message
       const aiMessage: Message = {
@@ -100,12 +79,7 @@ export default function ChatScreen() {
         isError: !!response.error
       };
       
-      // Track vocabulary if successful
-      if (!response.error) {
-        vocabularyTracker.processMessage(response.message);
-      }
-      
-      setMessages(prev => [...prev, aiMessage]);
+      addMessage(aiMessage);
     } catch (error) {
       // Handle unexpected errors
       const errorMessage: Message = {
@@ -116,9 +90,8 @@ export default function ChatScreen() {
         status: 'failed',
         isError: true
       };
-      setMessages(prev => [...prev, errorMessage]);
+      addMessage(errorMessage);
     } finally {
-      setIsLoading(false);
       setIsTyping(false);
       // Scroll to bottom after AI response
       setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);

@@ -4,13 +4,13 @@ import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import TextParserService, { TextSegment } from '../../services/textParser';
-import TextToSpeechService from '../../services/textToSpeech';
+import { textParserUtil } from '../../src/lib/utils/textParser';
+import { useTextToSpeech } from '../../src/lib/hooks';
+import { TextSegment } from '../../src/types';
 
 interface InteractiveTextProps {
   text: string;
   style?: any;
-  isUserMessage?: boolean;
   messageId: string;
 }
 
@@ -24,39 +24,20 @@ interface TranslationPopupProps {
 const TranslationPopup = ({ visible, word, translation, onClose }: TranslationPopupProps) => {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
-  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
-  const ttsService = TextToSpeechService.getInstance();
+  const { generateAndPlaySpeech, isGenerating, isAudioCached, isApiGenerating, forceResetWord } = useTextToSpeech();
 
   const handlePlayPronunciation = async () => {
-    if (isGeneratingAudio) return;
-
-    // Check if audio is already cached
-    if (ttsService.isAudioCached(word)) {
-      await ttsService.playWord(word);
-      return;
-    }
+    if (isGenerating === word) return;
 
     // If word is stuck in loading state, allow force reset on double-tap
-    if (ttsService.isGenerating(word)) {
-      ttsService.forceResetWord(word);
-      console.log('🔄 Reset stuck TTS for:', word);
+    if (isApiGenerating(word)) {
+      forceResetWord(word);
     }
 
-    // Generate new audio
-    setIsGeneratingAudio(true);
-    
-    try {
-      const response = await ttsService.generateSpeech(word);
-      
-      if (response.error) {
-        console.error('TTS Error:', response.error);
-      } else if (response.audioUri) {
-        await ttsService.playWord(word);
-      }
-    } catch (error) {
-      console.error('TTS generation failed:', error);
-    } finally {
-      setIsGeneratingAudio(false);
+    // Generate and play audio (handles caching internally)
+    const result = await generateAndPlaySpeech(word);
+    if (!result?.success) {
+      console.error('TTS Error:', result?.error);
     }
   };
 
@@ -95,16 +76,16 @@ const TranslationPopup = ({ visible, word, translation, onClose }: TranslationPo
               style={[styles.ttsButton, { 
                 backgroundColor: theme.primary + '15',
                 borderColor: theme.primary + '30',
-                opacity: isGeneratingAudio ? 0.6 : 1 
+                opacity: isGenerating === word ? 0.6 : 1 
               }]}
               onPress={handlePlayPronunciation}
-              disabled={isGeneratingAudio}
+              disabled={isGenerating === word}
             >
-              {isGeneratingAudio ? (
+              {isGenerating === word ? (
                 <ActivityIndicator size="small" color={theme.primary} />
               ) : (
                 <MaterialIcons 
-                  name={ttsService.isAudioCached(word) ? "volume-up" : "record-voice-over"} 
+                  name={isAudioCached(word) ? "volume-up" : "record-voice-over"} 
                   size={24} 
                   color={theme.primary} 
                 />
@@ -112,11 +93,11 @@ const TranslationPopup = ({ visible, word, translation, onClose }: TranslationPo
             </Pressable>
             
             <Text style={[styles.pronunciationHint, { color: theme.neutral }]}>
-              {isGeneratingAudio 
+              {isGenerating === word 
                 ? 'Generating pronunciation...' 
-                : ttsService.isAudioCached(word) 
+                : isAudioCached(word) 
                   ? 'Tap to hear again'
-                  : ttsService.isGenerating(word)
+                  : isApiGenerating(word)
                     ? 'Tap again to retry (stuck?)'
                     : 'Tap to hear pronunciation'
               }
@@ -128,16 +109,15 @@ const TranslationPopup = ({ visible, word, translation, onClose }: TranslationPo
   );
 };
 
-export default function InteractiveText({ text, style, isUserMessage = false, messageId }: InteractiveTextProps) {
+export default function InteractiveText({ text, style, messageId }: InteractiveTextProps) {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
   const [selectedTranslation, setSelectedTranslation] = useState<{word: string, translation: string} | null>(null);
-  const textParser = TextParserService.getInstance();
 
   // Parse the text into segments with memoization to prevent re-parsing
   const parsedText = React.useMemo(() => 
-    textParser.parseText(text, messageId), 
-    [text, messageId, textParser]
+    textParserUtil.parseText(text, messageId), 
+    [text, messageId]
   );
 
   const handleForeignWordPress = (word: string, translation: string) => {

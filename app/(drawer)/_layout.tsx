@@ -7,27 +7,17 @@ import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { router } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useState, useEffect } from 'react';
-import UserStatsService from '../../services/userStats';
+import { useUserStatsStore } from '../../src/lib/stores';
 
 // Custom header component for Duolingo-style stats
 function CustomTabBarHeader() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
-  const [stats, setStats] = useState({ streak: 0, xp: 0, level: 0 });
-  const userStatsService = UserStatsService.getInstance();
-
-  // Load and refresh stats
-  useEffect(() => {
-    const loadStats = () => {
-      const currentStats = userStatsService.getStats();
-      setStats(currentStats);
-    };
-
-    loadStats();
-    const interval = setInterval(loadStats, 2000);
-    return () => clearInterval(interval);
-  }, []);
+  
+  // Use simple selectors to avoid infinite loops
+  const streak = useUserStatsStore((state) => state.streak);
+  const xp = useUserStatsStore((state) => state.xp);
+  const level = useUserStatsStore((state) => state.level);
 
   return (
     <SafeAreaView edges={['top']} style={[styles.header, { backgroundColor: theme.background }]}>
@@ -36,17 +26,17 @@ function CustomTabBarHeader() {
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
             <MaterialIcons name="local-fire-department" size={18} color={theme.accent} />
-            <Text style={[styles.statNumber, { color: theme.accent }]}>{stats.streak}</Text>
+            <Text style={[styles.statNumber, { color: theme.accent }]}>{streak}</Text>
           </View>
           
           <View style={styles.statItem}>
             <MaterialIcons name="emoji-events" size={18} color={theme.primary} />
-            <Text style={[styles.statNumber, { color: theme.primary }]}>{stats.xp} XP</Text>
+            <Text style={[styles.statNumber, { color: theme.primary }]}>{xp} XP</Text>
           </View>
           
           <View style={styles.statItem}>
             <MaterialIcons name="trending-up" size={18} color={theme.secondary} />
-            <Text style={[styles.statNumber, { color: theme.secondary }]}>{stats.level}</Text>
+            <Text style={[styles.statNumber, { color: theme.secondary }]}>{level}</Text>
           </View>
         </View>
 
@@ -74,8 +64,6 @@ export default function TabsLayout() {
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <CustomTabBarHeader />
       <Tabs
-        // RN v7 uses `sceneStyle` (not `sceneContainerStyle`)
-        sceneStyle={{ backgroundColor: theme.background }}
         
         screenOptions={{
           headerShown: false,

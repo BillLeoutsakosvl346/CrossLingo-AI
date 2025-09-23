@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { StyleSheet } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -7,32 +7,19 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import ScreenContainer from '@/components/ui/ScreenContainer';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import VocabularyTrackerService from '../../services/vocabularyTracker';
-import UserStatsService from '../../services/userStats';
+import { useVocabulary } from '../../src/lib/hooks';
+import { useUserStatsStore } from '../../src/lib/stores';
 import { router } from 'expo-router';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
-  const [vocabularyCount, setVocabularyCount] = useState(0);
-  const [stats, setStats] = useState({ streak: 0, xp: 0, level: 0 });
+  const { wordCount } = useVocabulary();
   
-  const vocabularyTracker = VocabularyTrackerService.getInstance();
-  const userStatsService = UserStatsService.getInstance();
-
-  // Load vocabulary count and stats
-  useEffect(() => {
-    const loadData = () => {
-      const count = vocabularyTracker.getVocabularyCount();
-      const currentStats = userStatsService.getStats();
-      setVocabularyCount(count);
-      setStats(currentStats);
-    };
-
-    loadData();
-    const interval = setInterval(loadData, 2000);
-    return () => clearInterval(interval);
-  }, []);
+  // Use simple selectors to avoid infinite loops
+  const streak = useUserStatsStore((state) => state.streak);
+  const xp = useUserStatsStore((state) => state.xp);
+  const level = useUserStatsStore((state) => state.level);
 
   return (
     <ScreenContainer scrollable>
@@ -45,7 +32,7 @@ export default function HomeScreen() {
         <View style={[styles.statCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={styles.statContent}>
             <MaterialIcons name="local-fire-department" size={28} color={theme.accent} />
-            <Text style={[styles.statNumber, { color: theme.text }]}>{stats.streak}</Text>
+            <Text style={[styles.statNumber, { color: theme.text }]}>{streak}</Text>
             <Text style={[styles.statLabel, { color: theme.neutral }]}>Day Streak</Text>
           </View>
         </View>
@@ -53,7 +40,7 @@ export default function HomeScreen() {
         <View style={[styles.statCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={styles.statContent}>
             <MaterialIcons name="emoji-events" size={28} color={theme.primary} />
-            <Text style={[styles.statNumber, { color: theme.text }]}>{stats.xp}</Text>
+            <Text style={[styles.statNumber, { color: theme.text }]}>{xp}</Text>
             <Text style={[styles.statLabel, { color: theme.neutral }]}>Total XP</Text>
           </View>
         </View>
@@ -61,7 +48,7 @@ export default function HomeScreen() {
         <View style={[styles.statCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={styles.statContent}>
             <MaterialIcons name="trending-up" size={28} color={theme.secondary} />
-            <Text style={[styles.statNumber, { color: theme.text }]}>{stats.level}</Text>
+            <Text style={[styles.statNumber, { color: theme.text }]}>{level}</Text>
             <Text style={[styles.statLabel, { color: theme.neutral }]}>Level</Text>
           </View>
         </View>
@@ -120,7 +107,7 @@ export default function HomeScreen() {
         {/* Progress indicator */}
         <View style={styles.progressIndicator}>
           <Text style={[styles.progressText, { color: theme.neutral }]}>
-            Vocabulary Progress: {vocabularyCount} words collected
+            Vocabulary Progress: {wordCount} words collected
           </Text>
         </View>
       </View>

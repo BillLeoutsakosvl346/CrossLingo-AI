@@ -17,7 +17,7 @@ export default function NotFoundScreen() {
         
         <Button
           title="Go to home screen"
-          onPress={() => router.replace('/(drawer)/practice')}
+          onPress={() => router.replace('/(drawer)/home')}
         />
       </ScreenContainer>
     </>

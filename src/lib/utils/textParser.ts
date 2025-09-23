@@ -1,61 +1,41 @@
-export interface TextSegment {
-  id: string;
-  text: string;
-  type: 'text' | 'foreign';
-  translation?: string;
-}
+import { TextSegment, ParsedText } from '../../types';
 
-export interface ParsedText {
-  segments: TextSegment[];
-  hasForeignWords: boolean;
-}
-
-export class TextParserService {
-  private static instance: TextParserService;
-  private parseCache = new Map<string, ParsedText>();
-
-  public static getInstance(): TextParserService {
-    if (!TextParserService.instance) {
-      TextParserService.instance = new TextParserService();
-    }
-    return TextParserService.instance;
-  }
+class TextParserUtil {
+  private static readonly FOREIGN_WORD_REGEX = /<foreign>\[([^\]]+)\]==\[([^\]]+)\]<\/foreign>/g;
 
   /**
    * Parses text with foreign word markup and returns structured segments
    * Format: <foreign>[word]==[translation]</foreign>
    */
-  public parseText(text: string, messageId?: string): ParsedText {
-    // Return cached result if available
-    if (messageId && this.parseCache.has(messageId)) {
-      return this.parseCache.get(messageId)!;
-    }
+  parseText(text: string, messageId?: string): ParsedText {
     
     const segments: TextSegment[] = [];
     const uniquePrefix = messageId || Date.now().toString();
     let segmentId = 0;
-
-    // Regex to match foreign word markup
-    const foreignWordRegex = /<foreign>\[([^\]]+)\]==\[([^\]]+)\]<\/foreign>/g;
     
     let lastIndex = 0;
     let match;
     let hasForeignWords = false;
 
     // Find all foreign word matches
-    while ((match = foreignWordRegex.exec(text)) !== null) {
+    while ((match = TextParserUtil.FOREIGN_WORD_REGEX.exec(text)) !== null) {
       hasForeignWords = true;
       
       // Add text before the foreign word (if any)
       if (match.index > lastIndex) {
         const beforeText = text.substring(lastIndex, match.index);
-        if (beforeText.trim()) {
-          segments.push({
-            id: `${uniquePrefix}_text_${segmentId++}`,
-            text: beforeText,
-            type: 'text'
-          });
-        }
+        segments.push({
+          id: `${uniquePrefix}_text_${segmentId++}`,
+          text: beforeText,
+          type: 'text'
+        });
+      } else if (segments.length > 0 && segments[segments.length - 1].type === 'foreign') {
+        // Add space between consecutive foreign words when there's no text between them
+        segments.push({
+          id: `${uniquePrefix}_space_${segmentId++}`,
+          text: ' ',
+          type: 'text'
+        });
       }
 
       // Add the foreign word segment
@@ -93,35 +73,28 @@ export class TextParserService {
       });
     }
 
-    const result = {
+    return {
       segments,
       hasForeignWords
     };
-
-    // Cache result for reuse
-    if (messageId) {
-      this.parseCache.set(messageId, result);
-    }
-    
-    return result;
   }
 
   /**
    * Clean text by removing markup - useful for accessibility or fallbacks
    */
-  public cleanText(text: string): string {
-    return text.replace(/<foreign>\[([^\]]+)\]==\[([^\]]+)\]<\/foreign>/g, '$1');
+  cleanText(text: string): string {
+    return text.replace(TextParserUtil.FOREIGN_WORD_REGEX, '$1');
   }
 
   /**
    * Extract all foreign words and their translations from text
    */
-  public extractVocabulary(text: string): Array<{word: string, translation: string}> {
+  extractVocabulary(text: string): Array<{word: string, translation: string}> {
     const vocabulary: Array<{word: string, translation: string}> = [];
-    const foreignWordRegex = /<foreign>\[([^\]]+)\]==\[([^\]]+)\]<\/foreign>/g;
+    const regex = new RegExp(TextParserUtil.FOREIGN_WORD_REGEX.source, 'g');
     
     let match;
-    while ((match = foreignWordRegex.exec(text)) !== null) {
+    while ((match = regex.exec(text)) !== null) {
       vocabulary.push({
         word: match[1],
         translation: match[2]
@@ -130,6 +103,7 @@ export class TextParserService {
 
     return vocabulary;
   }
+
 }
 
-export default TextParserService;
+export const textParserUtil = new TextParserUtil();

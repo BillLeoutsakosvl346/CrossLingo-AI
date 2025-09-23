@@ -1,38 +1,10 @@
-import VocabularyTrackerService, { LearnedWord } from './vocabularyTracker';
+import { LearnedWord, QuizQuestion, QuizResult } from '../../types';
 
-export interface QuizQuestion {
-  id: string;
-  type: 'spanish-to-english' | 'english-to-spanish';
-  question: string;
-  correctAnswer: string;
-  options: string[];
-  word: LearnedWord;
-}
-
-export interface QuizResult {
-  totalQuestions: number;
-  correctAnswers: number;
-  percentage: number;
-  completedAt: Date;
-}
-
-export class QuizService {
-  private static instance: QuizService;
-  private vocabularyTracker = VocabularyTrackerService.getInstance();
-
-  public static getInstance(): QuizService {
-    if (!QuizService.instance) {
-      QuizService.instance = new QuizService();
-    }
-    return QuizService.instance;
-  }
-
+class QuizGeneratorUtil {
   /**
    * Generate a quiz with multiple choice questions
    */
-  public generateQuiz(): QuizQuestion[] {
-    const vocabulary = this.vocabularyTracker.getLearnedWords();
-    
+  generateQuiz(vocabulary: LearnedWord[]): QuizQuestion[] {
     if (vocabulary.length < 5) {
       return [];
     }
@@ -85,6 +57,37 @@ export class QuizService {
   }
 
   /**
+   * Calculate quiz results
+   */
+  calculateResults(questions: QuizQuestion[], userAnswers: string[]): QuizResult {
+    let correctCount = 0;
+    
+    questions.forEach((question, index) => {
+      if (userAnswers[index] === question.correctAnswer) {
+        correctCount++;
+      }
+    });
+
+    const percentage = Math.round((correctCount / questions.length) * 100);
+    const xpEarned = correctCount * 10; // 10 XP per correct answer
+
+    return {
+      totalQuestions: questions.length,
+      correctAnswers: correctCount,
+      percentage,
+      completedAt: new Date(),
+      xpEarned,
+    };
+  }
+
+  /**
+   * Check if vocabulary has enough words for quiz
+   */
+  canStartQuiz(vocabularyCount: number): boolean {
+    return vocabularyCount >= 5;
+  }
+
+  /**
    * Shuffle array using Fisher-Yates algorithm
    */
   private shuffleArray<T>(array: T[]): T[] {
@@ -95,42 +98,6 @@ export class QuizService {
     }
     return shuffled;
   }
-
-  /**
-   * Calculate quiz results
-   */
-  public calculateResults(questions: QuizQuestion[], userAnswers: string[]): QuizResult {
-    let correctCount = 0;
-    
-    questions.forEach((question, index) => {
-      if (userAnswers[index] === question.correctAnswer) {
-        correctCount++;
-      }
-    });
-
-    const percentage = Math.round((correctCount / questions.length) * 100);
-
-    return {
-      totalQuestions: questions.length,
-      correctAnswers: correctCount,
-      percentage,
-      completedAt: new Date(),
-    };
-  }
-
-  /**
-   * Check if vocabulary has enough words for quiz
-   */
-  public canStartQuiz(): boolean {
-    return this.vocabularyTracker.getVocabularyCount() >= 5;
-  }
-
-  /**
-   * Get vocabulary count
-   */
-  public getVocabularyCount(): number {
-    return this.vocabularyTracker.getVocabularyCount();
-  }
 }
 
-export default QuizService;
+export const quizGeneratorUtil = new QuizGeneratorUtil();

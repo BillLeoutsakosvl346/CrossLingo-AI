@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { StyleSheet } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -8,7 +8,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import ScreenContainer from '@/components/ui/ScreenContainer';
 import Card from '@/components/ui/Card';
-import UserStatsService from '../../../services/userStats';
+import { useUserStatsStore } from '../../../src/lib/stores';
 
 interface SettingsOptionProps {
   title: string;
@@ -20,20 +20,11 @@ interface SettingsOptionProps {
 export default function SettingsScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
-  const [stats, setStats] = useState({ streak: 0, xp: 0, level: 0 });
-  const userStatsService = UserStatsService.getInstance();
-
-  // Load stats
-  useEffect(() => {
-    const loadStats = () => {
-      const currentStats = userStatsService.getStats();
-      setStats(currentStats);
-    };
-
-    loadStats();
-    const interval = setInterval(loadStats, 2000);
-    return () => clearInterval(interval);
-  }, []);
+  
+  // Use Zustand store for stats
+  const streak = useUserStatsStore((state) => state.streak);
+  const xp = useUserStatsStore((state) => state.xp);
+  const level = useUserStatsStore((state) => state.level);
 
   const SettingsOption = ({ title, icon, onPress, iconType = 'FontAwesome' }: SettingsOptionProps) => (
     <Card onPress={onPress}>
@@ -77,9 +68,9 @@ export default function SettingsScreen() {
       </View>
       
       <View style={styles.statsSection}>
-        <StatCard icon="local-fire-department" value={stats.streak} label="Day Streak" color={theme.accent} />
-        <StatCard icon="emoji-events" value={stats.xp} label="Total XP" color={theme.primary} />
-        <StatCard icon="trending-up" value={stats.level} label="Level" color={theme.secondary} />
+        <StatCard icon="local-fire-department" value={streak} label="Day Streak" color={theme.accent} />
+        <StatCard icon="emoji-events" value={xp} label="Total XP" color={theme.primary} />
+        <StatCard icon="trending-up" value={level} label="Level" color={theme.secondary} />
       </View>
       
       <View style={styles.optionsContainer}>

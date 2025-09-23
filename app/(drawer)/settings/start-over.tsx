@@ -4,10 +4,15 @@ import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import BaseSettingsScreen from '@/components/ui/BaseSettingsScreen';
 import Button from '@/components/ui/Button';
+import { useUserStatsStore, useVocabularyStore, useChatStore } from '../../../src/lib/stores';
 
 export default function StartOverScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
+  
+  const resetStats = useUserStatsStore((state) => state.resetStats);
+  const clearVocabulary = useVocabularyStore((state) => state.clearVocabulary);
+  const clearConversation = useChatStore((state) => state.clearConversation);
 
   const handleReset = () => {
     Alert.alert(
@@ -19,7 +24,10 @@ export default function StartOverScreen() {
           text: 'Reset', 
           style: 'destructive',
           onPress: () => {
-            // TODO: Implement reset functionality
+            // Reset all data
+            resetStats();
+            clearVocabulary();
+            clearConversation();
             Alert.alert('Reset Complete', 'Your progress has been reset.');
           }
         }
